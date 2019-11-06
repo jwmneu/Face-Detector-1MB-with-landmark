@@ -26,7 +26,10 @@ int main(int argc, char** argv)
     string bin = "../model/face.bin";
     const int max_side = 320;
 
-    Detector detector(param, bin);
+    // slim or RFB
+    Detector detector(param, bin, false);
+    // retinaface
+    // Detector detector(param, bin, true);
     Timer timer;
     for	(int i = 0; i < 1000; i++){
 
@@ -60,6 +63,11 @@ int main(int argc, char** argv)
             sprintf(test, "%f", boxes[j].s);
 
             cv::putText(img, test, cv::Size((boxes[j].x1/scale), boxes[j].y1/scale), cv::FONT_HERSHEY_COMPLEX, 0.5, cv::Scalar(0, 255, 255));
+            cv::circle(img, cv::Point(boxes[j].point[0]._x / scale, boxes[j].point[0]._y / scale), 1, cv::Scalar(0, 0, 225), 4);
+            cv::circle(img, cv::Point(boxes[j].point[1]._x / scale, boxes[j].point[1]._y / scale), 1, cv::Scalar(0, 255, 225), 4);
+            cv::circle(img, cv::Point(boxes[j].point[2]._x / scale, boxes[j].point[2]._y / scale), 1, cv::Scalar(255, 0, 225), 4);
+            cv::circle(img, cv::Point(boxes[j].point[3]._x / scale, boxes[j].point[3]._y / scale), 1, cv::Scalar(0, 255, 0), 4);
+            cv::circle(img, cv::Point(boxes[j].point[4]._x / scale, boxes[j].point[4]._y / scale), 1, cv::Scalar(255, 0, 0), 4);
         }
         cv::imwrite("test.png", img);
     }

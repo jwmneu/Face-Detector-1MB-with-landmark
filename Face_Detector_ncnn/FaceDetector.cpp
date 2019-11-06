@@ -6,6 +6,7 @@ Detector::Detector():
         _nms(0.4),
         _threshold(0.6),
         _mean_val{104.f, 117.f, 123.f},
+        _retinaface(false),
         Net(new ncnn::Net())
 {
 }
@@ -18,10 +19,11 @@ inline void Detector::Release(){
     }
 }
 
-Detector::Detector(const std::string &model_param, const std::string &model_bin):
+Detector::Detector(const std::string &model_param, const std::string &model_bin, bool retinaface):
         _nms(0.4),
         _threshold(0.6),
         _mean_val{104.f, 117.f, 123.f},
+        _retinaface(retinaface),
         Net(new ncnn::Net())
 {
     Init(model_param, model_bin);
@@ -60,12 +62,16 @@ void Detector::Detect(cv::Mat& bgr, std::vector<bbox>& boxes)
 
     std::vector<box> anchor;
     timer.tic();
-    create_anchor(anchor,  bgr.cols, bgr.rows);
+    if (_retinaface)
+        create_anchor_retinaface(anchor,  bgr.cols, bgr.rows);
+    else
+        create_anchor(anchor,  bgr.cols, bgr.rows);
     timer.toc("anchor:");
 
     std::vector<bbox > total_box;
     float *ptr = out.channel(0);
     float *ptr1 = out1.channel(0);
+    float *landms = out2.channel(0);
 
     // #pragma omp parallel for num_threads(2)
     for (int i = 0; i < anchor.size(); ++i)
@@ -75,6 +81,8 @@ void Detector::Detect(cv::Mat& bgr, std::vector<bbox>& boxes)
             box tmp = anchor[i];
             box tmp1;
             bbox result;
+
+            // loc and conf
             tmp1.cx = tmp.cx + *ptr * 0.1 * tmp.sx;
             tmp1.cy = tmp.cy + *(ptr+1) * 0.1 * tmp.sy;
             tmp1.sx = tmp.sx * exp(*(ptr+2) * 0.2);
@@ -93,10 +101,19 @@ void Detector::Detect(cv::Mat& bgr, std::vector<bbox>& boxes)
             if (result.y2>in.h)
                 result.y2 = in.h;
             result.s = *(ptr1 + 1);
+
+            // landmark
+            for (int j = 0; j < 5; ++j)
+            {
+                result.point[j]._x =( tmp.cx + *(landms + (j<<1)) * 0.1 * tmp.sx ) * in.w;
+                result.point[j]._y =( tmp.cy + *(landms + (j<<1) + 1) * 0.1 * tmp.sy ) * in.h;
+            }
+
             total_box.push_back(result);
         }
-        ptr = ptr + 4;
+        ptr += 4;
         ptr1 += 2;
+        landms += 10;
     }
 
     std::sort(total_box.begin(), total_box.end(), cmp);
@@ -148,6 +165,46 @@ void Detector::create_anchor(std::vector<box> &anchor, int w, int h)
     std::vector<int> minsize4 = {128, 192, 256};
     min_sizes[3] = minsize4;
 
+
+    for (int k = 0; k < feature_map.size(); ++k)
+    {
+        std::vector<int> min_size = min_sizes[k];
+        for (int i = 0; i < feature_map[k][0]; ++i)
+        {
+            for (int j = 0; j < feature_map[k][1]; ++j)
+            {
+                for (int l = 0; l < min_size.size(); ++l)
+                {
+                    float s_kx = min_size[l]*1.0/w;
+                    float s_ky = min_size[l]*1.0/h;
+                    float cx = (j + 0.5) * steps[k]/w;
+                    float cy = (i + 0.5) * steps[k]/h;
+                    box axil = {cx, cy, s_kx, s_ky};
+                    anchor.push_back(axil);
+                }
+            }
+        }
+
+    }
+
+}
+
+void Detector::create_anchor_retinaface(std::vector<box> &anchor, int w, int h)
+{
+//    anchor.reserve(num_boxes);
+    anchor.clear();
+    std::vector<std::vector<int> > feature_map(3), min_sizes(3);
+    float steps[] = {8, 16, 32};
+    for (int i = 0; i < feature_map.size(); ++i) {
+        feature_map[i].push_back(ceil(h/steps[i]));
+        feature_map[i].push_back(ceil(w/steps[i]));
+    }
+    std::vector<int> minsize1 = {10, 20};
+    min_sizes[0] = minsize1;
+    std::vector<int> minsize2 = {32, 64};
+    min_sizes[1] = minsize2;
+    std::vector<int> minsize3 = {128, 256};
+    min_sizes[2] = minsize3;
 
     for (int k = 0; k < feature_map.size(); ++k)
     {
